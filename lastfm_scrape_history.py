@@ -89,7 +89,7 @@ def get_scrobbles(
     df = pd.DataFrame()
     df["artist"] = artist_names
     df["album"] = album_names
-    df["track"] = track_names
+    df["title"] = track_names
     df["timestamps"] = timestamps
     # In UTC. Last.fm returns datetimes in the user's locale when they listened
     df["datetime"] = pd.to_datetime(timestamps, unit="s")
@@ -116,10 +116,10 @@ print(scrobbles.describe())
 
 SEP = '////'
 scrobble_counts = (scrobbles.artist + SEP + scrobbles.album +
-                   SEP + scrobbles.track).value_counts()
+                   SEP + scrobbles.title).value_counts()
 top_entries = pd.DataFrame(
     data=scrobble_counts.index.str.split(SEP, 2).tolist(),
-    columns=['artist', 'album', 'track']
+    columns=['artist', 'album', 'title']
 )
 top_entries['playcount'] = scrobble_counts.values
 top_entries.to_csv('lastfm_playcounts.tsv', sep='\t', index=True)
