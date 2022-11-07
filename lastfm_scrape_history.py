@@ -13,12 +13,11 @@ TEXT = "#text"
 ESTIMATED_TIME_FOR_PROCESSING_PAGE = 115
 START_TIME = time.time()
 
+SCROBBLES_TSV = './tsvs/lastfm_scrobbles.tsv'
+PLAYCOUNTS_TSV = './tsvs/lastfm_playcounts.tsv'
+
 if LASTFM_USER_NAME is None or LASTFM_API_KEY is None:
-    print(
-        """
-        You need to generate some credentials, see the source code
-        """
-    )
+    print("You need to generate some credentials")
     sys.exit(1)
 
 
@@ -108,21 +107,20 @@ def get_time_remaining(pages_remaining):
     return "{}m{:2}s".format(minutes_remaining, seconds_remaining)
 
 
-scrobbles = get_scrobbles(page=1, pages=0)  # Default to all Scrobbles
-scrobbles.to_csv('lastfm_scrobbles.tsv', sep='\t',
-                 index=False, encoding="utf-8")
+if __name__ == "__main__":
 
-print(scrobbles.describe())
+    scrobbles = get_scrobbles(page=1, pages=0)  # Default to all Scrobbles
+    scrobbles.to_csv(SCROBBLES_TSV, sep='\t', index=False, encoding="utf-8")
+    print(scrobbles.describe())
 
-SEP = '////'
-scrobble_counts = (scrobbles.artist + SEP + scrobbles.album +
-                   SEP + scrobbles.title).value_counts()
-top_entries = pd.DataFrame(
-    data=scrobble_counts.index.str.split(SEP, 2).tolist(),
-    columns=['artist', 'album', 'title']
-)
-top_entries['playcount'] = scrobble_counts.values
-top_entries.to_csv('lastfm_playcounts.tsv', sep='\t', index=True)
-print(top_entries.head())
-
-print(f'Finished in {round((time.time() - START_TIME)/60., 2)} minutes')
+    SEP = '////'
+    scrobble_counts = (scrobbles.artist + SEP + scrobbles.album +
+                       SEP + scrobbles.title).value_counts()
+    top_entries = pd.DataFrame(
+        data=scrobble_counts.index.str.split(SEP, 2).tolist(),
+        columns=['artist', 'album', 'title']
+    )
+    top_entries['playcount'] = scrobble_counts.values
+    top_entries.to_csv(PLAYCOUNTS_TSV, sep='\t', index=True)
+    print(top_entries.head())
+    print(f'Finished in {round((time.time() - START_TIME)/60., 2)} minutes')
