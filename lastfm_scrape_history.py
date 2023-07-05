@@ -117,7 +117,7 @@ if __name__ == "__main__":
     scrobble_counts = (scrobbles.artist + SEP + scrobbles.album +
                        SEP + scrobbles.title).value_counts()
     top_entries = pd.DataFrame(
-        data=scrobble_counts.index.str.split(SEP, 2).tolist(),
+        data=scrobble_counts.index.str.split(SEP, n=2).tolist(),
         columns=['artist', 'album', 'title']
     )
     top_entries['playcount'] = scrobble_counts.values
