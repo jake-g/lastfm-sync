@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import time
 from requests_toolbelt.threaded import pool
+import unify_lib as uni
 
 # https://mathieuhendey.com/2020/10/download-all-your-historical-last.fm-data/#pandas-to-create-a-csv
 # Generate your own at https://www.last.fm/api/account/create
@@ -15,6 +16,8 @@ START_TIME = time.time()
 
 SCROBBLES_TSV = './tsvs/lastfm_scrobbles.tsv'
 PLAYCOUNTS_TSV = './tsvs/lastfm_playcounts.tsv'
+LASTFM_TOP_ALBUMS = './tsvs/lastfm_top_albums.tsv'
+
 
 if LASTFM_USER_NAME is None or LASTFM_API_KEY is None:
     print("You need to generate some credentials")
@@ -123,4 +126,19 @@ if __name__ == "__main__":
     top_entries['playcount'] = scrobble_counts.values
     top_entries.to_csv(PLAYCOUNTS_TSV, sep='\t', index=True)
     print(top_entries.head())
+    
+    # Load tsv and get top albums
+    lastfm = uni.ingest_lastfm_playcounts(PLAYCOUNTS_TSV)
+
+
+    total_playcount = lastfm.groupby('fuzzy_album_id').agg({
+        'playcount': ['sum', 'mean'],  # Sum and mean of playcount
+        'artist': 'first',             # First artist in each group
+        'album': 'first'               # First album in each group
+    })
+    total_playcount.columns = ['total_playcount', 'mean_playcount', 'artist', 'album']
+    total_playcount = total_playcount.sort_values(by='total_playcount', ascending=False)
+    total_playcount.to_csv(LASTFM_TOP_ALBUMS, sep='\t')
+    print(f'Top 50 albums:\n{total_playcount.head(50)}')
+        
     print(f'Finished in {round((time.time() - START_TIME)/60., 2)} minutes')
