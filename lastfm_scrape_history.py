@@ -1,144 +1,135 @@
-import sys
+"""LastFM History Library"""
 
+import sys
+import time
 import pandas as pd
 import requests
-import time
 from requests_toolbelt.threaded import pool
 import unify_lib as uni
 
-# https://mathieuhendey.com/2020/10/download-all-your-historical-last.fm-data/#pandas-to-create-a-csv
 # Generate your own at https://www.last.fm/api/account/create
-LASTFM_API_KEY = 'd7053703d3fa8368a4799b99516351f5'
-LASTFM_USER_NAME = 'omonoid'
-TEXT = "#text"
-ESTIMATED_TIME_FOR_PROCESSING_PAGE = 115
-START_TIME = time.time()
+from auth import LASTFM_API_KEY, LASTFM_USER_NAME
 
+# https://mathieuhendey.com/2020/10/download-all-your-historical-last.fm-data/#pandas-to-create-a-csv
+
+
+# File paths for saving data
 SCROBBLES_TSV = './tsvs/lastfm_scrobbles.tsv'
 PLAYCOUNTS_TSV = './tsvs/lastfm_playcounts.tsv'
 LASTFM_TOP_ALBUMS = './tsvs/lastfm_top_albums.tsv'
 
 
-if LASTFM_USER_NAME is None or LASTFM_API_KEY is None:
-    print("You need to generate some credentials")
-    sys.exit(1)
-
-
 def get_scrobbles(
     endpoint="recenttracks",
     username=LASTFM_USER_NAME,
-    key=LASTFM_API_KEY,
+    api_key=LASTFM_API_KEY,
     limit=200,
     extended=0,
     page=1,
     pages=0,
 ):
+    """Retrieves and processes scrobble data from the Last.fm API.
+
+    Fetches scrobble data for a given user, processes it, and returns a DataFrame.
+
+    Args:
+        endpoint: The Last.fm API endpoint. Defaults to "recenttracks".
+        username: The Last.fm username. 
+        api_key: Your Last.fm API key. 
+        limit: Records per page (max 200). Defaults to 200.
+        extended: Retrieve extended results (likes etc.). Defaults to 0 (False).
+        page: The first page to retrieve. Defaults to 1.
+        pages: Number of pages to fetch after `page` (0 fetches all). Defaults to 0.
+
+    Returns:
+        A DataFrame containing the scrobble data.
     """
-    endpoint: API endpoint.
-    username: Last.fm username to fetch scrobbles for.
-    key: API key.
-    limit: The number of records per page. Maximum is 200.
-    extended: Extended results from API, such as whether user has "liked" the track.
-    page: First page to retrieve.
-    pages: How many pages of results after "page" argument to retrieve. If 0, get all pages.
-    """
-    # initialize URL and lists to contain response fields
-    url = (
-        "https://ws.audioscrobbler.com/2.0/?method=user.get{}"
-        "&user={}"
-        "&api_key={}"
-        "&limit={}"
-        "&extended={}"
-        "&page={}"
-        "&format=json"
+
+    base_url = (
+        f"https://ws.audioscrobbler.com/2.0/?method=user.get{endpoint}"
+        f"&user={username}&api_key={api_key}&limit={limit}&extended={extended}"
+        f"&format=json"
     )
 
-    # get total number of pages
-    request_url = url.format(endpoint, username, key, limit, extended, page)
-    response = requests.get(request_url).json()
+    # Determine the total number of pages to fetch
+    response = requests.get(f"{base_url}&page={page}").json()
     total_pages = int(response[endpoint]["@attr"]["totalPages"])
-    if pages > 0:
-        total_pages = min([total_pages, pages])
+    total_pages = min(total_pages, pages) if pages else total_pages
 
-    print(
-        "Total pages to retrieve: {}. Estimated time: {}".format(
-            total_pages, get_time_remaining(total_pages)
-        )
-    )
+    print(f"Total pages to retrieve: {total_pages}.")
 
-    artist_names = []
-    album_names = []
-    track_names = []
-    timestamps = []
-    urls = []
-    # add formatted URLs to list to be requested in thread pool
-    for page in range(0, int(total_pages) + 1, 1):
-        urls.append(url.format(endpoint, username, key, limit, extended, page))
+    # Generate URLs for each page to be fetched
+    urls = [f"{base_url}&page={
+        page_num}" for page_num in range(page, total_pages + 1)]
+
+    # Fetch data concurrently
     p = pool.Pool.from_urls(urls)
     p.join_all()
 
+    # Extract data from responses
+    df_data = []
     for response in p.responses():
-        if endpoint in response.json():
-            response_json = response.json()[endpoint]["track"]
-            for track in response_json:
+        if response.ok and endpoint in response.json():
+            for track in response.json()[endpoint].get("track", []):
                 if "@attr" not in track:
-                    artist_names.append(track["artist"][TEXT])
-                    album_names.append(track["album"][TEXT])
-                    track_names.append(track["name"])
-                    timestamps.append(track["date"]["uts"])
+                    df_data.append({
+                        "artist": track["artist"]["#text"],
+                        "album": track["album"]["#text"],
+                        "title": track["name"],
+                        "timestamps": int(track["date"]["uts"]),
+                    })
 
-    # create and populate a dataframe to contain the data
-    df = pd.DataFrame()
-    df["artist"] = artist_names
-    df["album"] = album_names
-    df["title"] = track_names
-    df["timestamps"] = timestamps
-    # In UTC. Last.fm returns datetimes in the user's locale when they listened
-    df["datetime"] = pd.to_datetime(timestamps, unit="s")
-    df.sort_values("datetime", ascending=True, inplace=True)
-    return df
+    # Create DataFrame from extracted data
+    df = pd.DataFrame(df_data)
+    df["datetime"] = pd.to_datetime(df["timestamps"], unit="s")
+    return df.sort_values("datetime", ascending=True)
 
 
-def get_time_remaining(pages_remaining):
-    """Calculate the estimated time remaining."""
-    millis_remaining = int(
-        pages_remaining * ESTIMATED_TIME_FOR_PROCESSING_PAGE)
-    seconds_remaining = (millis_remaining / 1000) % 60
-    seconds_remaining = int(seconds_remaining)
-    minutes_remaining = (millis_remaining / (1000 * 60)) % 60
-    minutes_remaining = int(minutes_remaining)
-    return "{}m{:2}s".format(minutes_remaining, seconds_remaining)
+def get_time_remaining(pages_remaining: int, time_per_page_ms: int = 115) -> str:
+    """Calculates the estimated time remaining for processing.
+
+    Args:
+        pages_remaining: The number of pages remaining to process.
+        time_per_page_ms: Estimated time to process a single page in milliseconds. 
+
+    Returns:
+        The estimated time remaining in the format "mm:ss".
+    """
+    minutes, seconds = divmod(pages_remaining * time_per_page_ms / 1000, 60)
+    return f"{int(minutes)}m{int(seconds):02}s"
 
 
 if __name__ == "__main__":
+    t0 = time.time()
 
-    scrobbles = get_scrobbles(page=1, pages=0)  # Default to all Scrobbles
-    scrobbles.to_csv(SCROBBLES_TSV, sep='\t', index=False, encoding="utf-8")
-    print(scrobbles.describe())
+    # --- Fetch and save all Scrobbles ---
+    scrobbles_df = get_scrobbles(page=1, pages=0)  # Default to all Scrobbles
+    scrobbles_df.to_csv(SCROBBLES_TSV, sep='\t', index=False, encoding="utf-8")
+    print(scrobbles_df.describe())
 
-    SEP = '////'
-    scrobble_counts = (scrobbles.artist + SEP + scrobbles.album +
-                       SEP + scrobbles.title).value_counts()
+    # --- Calculate and save Playcounts ---
+    sep = "////"
+    scrobble_counts = (scrobbles_df.artist + sep + scrobbles_df.album +
+                       sep + scrobbles_df.title).value_counts()
     top_entries = pd.DataFrame(
-        data=scrobble_counts.index.str.split(SEP, n=2).tolist(),
+        data=scrobble_counts.index.str.split(sep, n=2).tolist(),
         columns=['artist', 'album', 'title']
     )
     top_entries['playcount'] = scrobble_counts.values
     top_entries.to_csv(PLAYCOUNTS_TSV, sep='\t', index=True)
     print(top_entries.head())
-    
-    # Load tsv and get top albums
+
+    # --- Load playcounts tsv and analyze top albums ---
     lastfm = uni.ingest_lastfm_playcounts(PLAYCOUNTS_TSV)
-
-
     total_playcount = lastfm.groupby('fuzzy_album_id').agg({
         'playcount': ['sum', 'mean'],  # Sum and mean of playcount
         'artist': 'first',             # First artist in each group
         'album': 'first'               # First album in each group
     })
-    total_playcount.columns = ['total_playcount', 'mean_playcount', 'artist', 'album']
-    total_playcount = total_playcount.sort_values(by='total_playcount', ascending=False)
+    total_playcount.columns = ['total_playcount',
+                               'mean_playcount', 'artist', 'album']
+    total_playcount = total_playcount.sort_values(
+        by='total_playcount', ascending=False)
     total_playcount.to_csv(LASTFM_TOP_ALBUMS, sep='\t')
     print(f'Top 50 albums:\n{total_playcount.head(50)}')
-        
-    print(f'Finished in {round((time.time() - START_TIME)/60., 2)} minutes')
+    print(f'Finished in {(time.time() - t0)/60:0.1f} minutes')
