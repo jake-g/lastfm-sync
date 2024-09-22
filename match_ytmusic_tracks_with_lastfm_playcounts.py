@@ -13,6 +13,7 @@ YT_TRACK_DB_LATEST = '../ytmusic/playlists/_tracks_db.tsv'
 YT_TRACK_DB_OUT = './tsvs/ytmusic_all_database.tsv'
 YTMUSIC_MATCHED = './db_assets/ytmusic_tracks_db.tsv'
 YT_LASTFM_MAP = '../ytmusic/playlists/_ytmusic_lastfm_match_id_map.tsv'
+YT_LASTFM_PLACYCOUNT = '../ytmusic/playlists/_ytmusic_lastfm_playcount.tsv'
 
 LOAD_LAST_MATCHES = True
 
@@ -32,16 +33,21 @@ yt_lastfm_id_map = {}  # key is ytmusic fuzzy id, value last fm fuzz id
 
 
 def save_tsvs(yt_playcounts, yt_no_lastfm_match, yt_lastfm_id_map, yt_tracks):
+    
+    yt_no_lastfm_match = yt_no_lastfm_match.copy()
     yt_no_lastfm_match = pd.DataFrame.from_dict(
         yt_no_lastfm_match, orient='index')
     yt_no_lastfm_match.to_csv(yt_no_lastfm_match_f,
                               header=True, sep='\t', index=True, encoding='utf-8')
 
+    yt_playcounts = yt_playcounts.copy()
     yt_playcounts = pd.DataFrame.from_dict(yt_playcounts, orient='index')
     yt_playcounts.columns = ['lastfm_playcount']
     yt_playcounts.to_csv(yt_playcounts_f,
                          header=True, sep='\t', index=True, encoding='utf-8')
-
+    yt_playcounts.to_csv(YT_LASTFM_PLACYCOUNT,
+                         header=True, sep='\t', index=True, encoding='utf-8')
+    yt_lastfm_id_map = yt_lastfm_id_map.copy()
     yt_lastfm_id_map = pd.DataFrame.from_dict(yt_lastfm_id_map, orient='index')
     yt_lastfm_id_map.columns = ['lastfm_fuzzy_id']
     yt_lastfm_id_map.to_csv(yt_lastfm_id_map_f,
