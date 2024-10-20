@@ -110,7 +110,7 @@ if __name__ == "__main__":
             print(f"Processed {round(100*i/n,1)}%, {i+1} of {n} tracks in",
                   f"{round(elapsed_time/60.0)} minutes",
                   f"\n  Process rate: {avg_process_time_s} seconds per track,",
-                  f"expected total duration:"
+                  f"expected total duration:",
                   f"{round(avg_process_time_s*n/3600.0,1)} hours",
                   f"\n  Matched {round(100*len(yt_playcounts)/i,1)}%,",
                   f"{len(yt_playcounts)} playcounts,",
