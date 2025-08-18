@@ -11,7 +11,6 @@ DATE = time.strftime('%m-%d-%Y')
 LASTFM_PLAYCOUNTS = './tsvs/lastfm_playcounts.tsv'
 YT_TRACK_DB_LATEST = '../ytmusic/playlists/_tracks_db.tsv'
 YT_TRACK_DB_OUT = './tsvs/ytmusic_all_database.tsv'
-YTMUSIC_MATCHED = './db_assets/ytmusic_tracks_db.tsv'
 YT_LASTFM_MAP = '../ytmusic/playlists/_ytmusic_lastfm_match_id_map.tsv'
 YT_LASTFM_PLACYCOUNT = '../ytmusic/playlists/_ytmusic_lastfm_playcount.tsv'
 
@@ -22,7 +21,6 @@ YTB_CP_COLS = ['title', 'album', 'likeStatus', 'duration', 'artistId',
                'albumId', 'playlists', 'averageRating', 'viewCount',
                'albumArtist', 'albumYear', 'albumTrackCount',
                'albumDuration', 'albumType', 'fuzzy_album_id', 'fuzzy_id']
-copyfile(YT_TRACK_DB_LATEST, YTMUSIC_MATCHED)
 
 yt_no_lastfm_match_f = f'./logs/ytmusic_no_lastfm_match_{DATE}.tsv'
 yt_playcounts_f = f'./logs/ytmusic_lastfm_playcounts_{DATE}.tsv'
@@ -74,7 +72,7 @@ if __name__ == "__main__":
     lastfm = uni.ingest_lastfm_playcounts(LASTFM_PLAYCOUNTS)
     lastfm_fuzzy_set = frozenset(lastfm['fuzzy_id'])
     yt_tracks = uni.ingest_ytmusic_db_assets(
-        YTMUSIC_MATCHED, save_tsv=True, ytm_db=YT_TRACK_DB_OUT)
+        YT_TRACK_DB_LATEST, save_tsv=True, ytm_db=YT_TRACK_DB_OUT)
     print(f'Loaded dbs in {round(time.time() - t1)} seconds...')
 
     # PROCESS
