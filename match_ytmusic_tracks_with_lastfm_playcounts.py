@@ -1,18 +1,22 @@
-import time
-import pandas as pd
+import os
 from shutil import copyfile
-import unify_lib as uni
+import time
+
+import pandas as pd
+
+# Root directory for unified music source outputs
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'music-sources-unified'))
 
 # TODO: have option to only update tracks with missing playcount
 #   and redo all like every X months)
 LOG_EVERY = 500
 DATE = time.strftime('%m-%d-%Y')
 
-LASTFM_PLAYCOUNTS = './tsvs/lastfm_playcounts.tsv'
-YT_TRACK_DB_LATEST = '../ytmusic/playlists/_tracks_db.tsv'
-YT_TRACK_DB_OUT = './tsvs/ytmusic_all_database.tsv'
-YT_LASTFM_MAP = '../ytmusic/playlists/_ytmusic_lastfm_match_id_map.tsv'
-YT_LASTFM_PLACYCOUNT = '../ytmusic/playlists/_ytmusic_lastfm_playcount.tsv'
+LASTFM_PLAYCOUNTS = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_playcounts.tsv')
+YT_TRACK_DB_LATEST = os.path.join(OUTPUT_DIR, '../ytmusic/playlists/_tracks_db.tsv')
+YT_TRACK_DB_OUT = os.path.join(OUTPUT_DIR, 'tsvs', 'ytmusic_all_database.tsv')
+YT_LASTFM_MAP = os.path.join(OUTPUT_DIR, '../ytmusic/playlists/_ytmusic_lastfm_match_id_map.tsv')
+YT_LASTFM_PLACYCOUNT = os.path.join(OUTPUT_DIR, '../ytmusic/playlists/_ytmusic_lastfm_playcount.tsv')
 
 LOAD_LAST_MATCHES = True
 
@@ -22,16 +26,16 @@ YTB_CP_COLS = ['title', 'album', 'likeStatus', 'duration', 'artistId',
                'albumArtist', 'albumYear', 'albumTrackCount',
                'albumDuration', 'albumType', 'fuzzy_album_id', 'fuzzy_id']
 
-yt_no_lastfm_match_f = f'./logs/ytmusic_no_lastfm_match_{DATE}.tsv'
-yt_playcounts_f = f'./logs/ytmusic_lastfm_playcounts_{DATE}.tsv'
-yt_lastfm_id_map_f = f'./logs/ytmusic_lastfm_match_id_map_{DATE}.tsv'
+yt_no_lastfm_match_f = os.path.join(OUTPUT_DIR, 'logs', f'ytmusic_no_lastfm_match_{DATE}.tsv')
+yt_playcounts_f = os.path.join(OUTPUT_DIR, 'logs', f'ytmusic_lastfm_playcounts_{DATE}.tsv')
+yt_lastfm_id_map_f = os.path.join(OUTPUT_DIR, 'logs', f'ytmusic_lastfm_match_id_map_{DATE}.tsv')
 yt_playcounts = {}
 yt_no_lastfm_match = {}
 yt_lastfm_id_map = {}  # key is ytmusic fuzzy id, value last fm fuzz id
 
 
 def save_tsvs(yt_playcounts, yt_no_lastfm_match, yt_lastfm_id_map, yt_tracks):
-    
+
     yt_no_lastfm_match = yt_no_lastfm_match.copy()
     yt_no_lastfm_match = pd.DataFrame.from_dict(
         yt_no_lastfm_match, orient='index')
@@ -60,6 +64,13 @@ def save_tsvs(yt_playcounts, yt_no_lastfm_match, yt_lastfm_id_map, yt_tracks):
 
 
 if __name__ == "__main__":
+    # Add path to shared library
+    import sys
+    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'music-sources-unified'))
+    if module_path not in sys.path:
+        sys.path.append(module_path)
+    import unify_lib as uni
+
     # INIT
     t1 = time.time()
     print(f'Starting {int(t1)}')

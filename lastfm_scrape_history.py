@@ -1,22 +1,25 @@
 """LastFM History Library"""
 
-import sys
+import os
 import time
+
 import pandas as pd
 import requests
 from requests_toolbelt.threaded import pool
-import unify_lib as uni
 
 # Generate your own at https://www.last.fm/api/account/create
-from auth import LASTFM_API_KEY, LASTFM_USER_NAME
+from auth import LASTFM_API_KEY
+from auth import LASTFM_USER_NAME
 
 # https://mathieuhendey.com/2020/10/download-all-your-historical-last.fm-data/#pandas-to-create-a-csv
 
+# Root directory for unified music source outputs
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'music-sources-unified'))
 
 # File paths for saving data
-SCROBBLES_TSV = './tsvs/lastfm_scrobbles.tsv'
-PLAYCOUNTS_TSV = './tsvs/lastfm_playcounts.tsv'
-LASTFM_TOP_ALBUMS = './tsvs/lastfm_top_albums.tsv'
+SCROBBLES_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_scrobbles.tsv')
+PLAYCOUNTS_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_playcounts.tsv')
+LASTFM_TOP_ALBUMS = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_top_albums.tsv')
 
 
 def get_scrobbles(
@@ -34,8 +37,8 @@ def get_scrobbles(
 
     Args:
         endpoint: The Last.fm API endpoint. Defaults to "recenttracks".
-        username: The Last.fm username. 
-        api_key: Your Last.fm API key. 
+        username: The Last.fm username.
+        api_key: Your Last.fm API key.
         limit: Records per page (max 200). Defaults to 200.
         extended: Retrieve extended results (likes etc.). Defaults to 0 (False).
         page: The first page to retrieve. Defaults to 1.
@@ -90,7 +93,7 @@ def get_time_remaining(pages_remaining: int, time_per_page_ms: int = 115) -> str
 
     Args:
         pages_remaining: The number of pages remaining to process.
-        time_per_page_ms: Estimated time to process a single page in milliseconds. 
+        time_per_page_ms: Estimated time to process a single page in milliseconds.
 
     Returns:
         The estimated time remaining in the format "mm:ss".
@@ -100,6 +103,11 @@ def get_time_remaining(pages_remaining: int, time_per_page_ms: int = 115) -> str
 
 
 if __name__ == "__main__":
+    # Add path to shared library
+    import sys
+    sys.path.append(os.path.abspath('../music-sources-unified'))
+    import unify_lib as uni
+
     t0 = time.time()
 
     # --- Fetch and save all Scrobbles ---

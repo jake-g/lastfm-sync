@@ -1,0 +1,8 @@
+.ipynb_checkpoints/
+__pycache__/
+old/
+logs/
+tsvs/
+.DS_Store
+auth.py
+*.log

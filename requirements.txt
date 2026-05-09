@@ -1,0 +1,6 @@
+pandas
+requests
+requests-toolbelt
+fuzzywuzzy
+rapidfuzz
+python-Levenshtein
