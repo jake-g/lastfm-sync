@@ -1,5 +1,7 @@
+import argparse
 import os
 from shutil import copyfile
+import sys
 import time
 
 import pandas as pd
@@ -7,8 +9,10 @@ import pandas as pd
 # Root directory for unified music source outputs
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'music-sources-unified'))
 
-# TODO: have option to only update tracks with missing playcount
-#   and redo all like every X months)
+# Run Interval Threshold (90 days = 3 months default)
+RUN_INTERVAL_DAYS = 90
+LAST_RUN_MARKER = os.path.join(OUTPUT_DIR, 'tsvs', '.last_ytmusic_lastfm_match_run')
+
 LOG_EVERY = 500
 DATE = time.strftime('%m-%d-%Y')
 
@@ -19,7 +23,6 @@ YT_LASTFM_MAP = os.path.join(OUTPUT_DIR, '../ytmusic/playlists/_ytmusic_lastfm_m
 YT_LASTFM_PLACYCOUNT = os.path.join(OUTPUT_DIR, '../ytmusic/playlists/_ytmusic_lastfm_playcount.tsv')
 
 LOAD_LAST_MATCHES = True
-
 
 YTB_CP_COLS = ['title', 'album', 'likeStatus', 'duration', 'artistId',
                'albumId', 'playlists', 'averageRating', 'viewCount',
@@ -34,8 +37,36 @@ yt_no_lastfm_match = {}
 yt_lastfm_id_map = {}  # key is ytmusic fuzzy id, value last fm fuzz id
 
 
-def save_tsvs(yt_playcounts, yt_no_lastfm_match, yt_lastfm_id_map, yt_tracks):
+def check_should_run(force: bool = False) -> bool:
+  """Checks if script should run based on RUN_INTERVAL_DAYS threshold."""
+  if force:
+    print("Force flag set: Running Last.fm playcount matching ignoring interval threshold.")
+    return True
 
+  target_file = LAST_RUN_MARKER if os.path.exists(LAST_RUN_MARKER) else (YT_LASTFM_PLACYCOUNT if os.path.exists(YT_LASTFM_PLACYCOUNT) else None)
+
+  if target_file and os.path.exists(target_file):
+    mtime = os.path.getmtime(target_file)
+    elapsed_days = (time.time() - mtime) / (24 * 3600)
+    if elapsed_days < RUN_INTERVAL_DAYS:
+      print(f"\nSkipping Last.fm <-> YTMusic playcount matching:")
+      print(f"  -> Last run was {elapsed_days:.1f} days ago (Interval threshold: {RUN_INTERVAL_DAYS} days).")
+      print(f"  -> Use --force to override and run immediately.\n")
+      return False
+  return True
+
+
+def touch_last_run_marker():
+  """Updates the marker file with current timestamp."""
+  try:
+    os.makedirs(os.path.dirname(LAST_RUN_MARKER), exist_ok=True)
+    with open(LAST_RUN_MARKER, 'w', encoding='utf-8') as f:
+      f.write(f"last_run={time.time()}\nlast_run_date={time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+  except Exception as e:
+    print(f"Warning writing last run marker: {e}")
+
+
+def save_tsvs(yt_playcounts, yt_no_lastfm_match, yt_lastfm_id_map, yt_tracks):
     yt_no_lastfm_match = yt_no_lastfm_match.copy()
     yt_no_lastfm_match = pd.DataFrame.from_dict(
         yt_no_lastfm_match, orient='index')
@@ -61,11 +92,18 @@ def save_tsvs(yt_playcounts, yt_no_lastfm_match, yt_lastfm_id_map, yt_tracks):
     assert len(track_db) == len(yt_tracks)
     assert track_db['lastfm_playcount'].sum() > 0
     track_db.to_csv(YT_TRACK_DB_OUT, sep='\t', header=True)
+    touch_last_run_marker()
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Match YTMusic tracks with Last.fm playcounts.")
+    parser.add_argument('--force', '-f', action='store_true', help="Force run matching ignoring interval threshold")
+    args, _ = parser.parse_known_args()
+
+    if not check_should_run(force=args.force):
+        sys.exit(0)
+
     # Add path to shared library
-    import sys
     module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'music-sources-unified'))
     if module_path not in sys.path:
         sys.path.append(module_path)

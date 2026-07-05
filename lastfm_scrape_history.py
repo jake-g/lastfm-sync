@@ -5,7 +5,6 @@ import time
 
 import pandas as pd
 import requests
-from requests_toolbelt.threaded import pool
 
 # Generate your own at https://www.last.fm/api/account/create
 from auth import LASTFM_API_KEY
@@ -66,14 +65,21 @@ def get_scrobbles(
         page_num}" for page_num in range(page, total_pages + 1)]
 
     # Fetch data concurrently
-    p = pool.Pool.from_urls(urls)
-    p.join_all()
+    try:
+        from requests_toolbelt.threaded import pool
+        p = pool.Pool.from_urls(urls)
+        p.join_all()
+        responses = p.responses()
+    except ImportError:
+        print("Warning: requests_toolbelt not installed. Using sequential requests.")
+        responses = [requests.get(url) for url in urls]
 
     # Extract data from responses
     df_data = []
-    for response in p.responses():
-        if response.ok and endpoint in response.json():
-            for track in response.json()[endpoint].get("track", []):
+    for response in responses:
+        res_json = response.json() if hasattr(response, 'json') else response.json
+        if response.ok and endpoint in res_json:
+            for track in res_json[endpoint].get("track", []):
                 if "@attr" not in track:
                     df_data.append({
                         "artist": track["artist"]["#text"],
@@ -140,4 +146,8 @@ if __name__ == "__main__":
         by='total_playcount', ascending=False)
     total_playcount.to_csv(LASTFM_TOP_ALBUMS, sep='\t')
     print(f'Top 50 albums:\n{total_playcount.head(50)}')
+
+
+
+
     print(f'Finished in {(time.time() - t0)/60:0.1f} minutes')
