@@ -166,3 +166,9 @@ if __name__ == "__main__":
                       yt_lastfm_id_map, yt_tracks)  # backup incase stop
 
     save_tsvs(yt_playcounts, yt_no_lastfm_match, yt_lastfm_id_map, yt_tracks)
+
+    print("\n--- Last.fm <-> YTMusic Matching Summary ---")
+    print(f"Total YTMusic Tracks Evaluated: {len(yt_tracks):,}")
+    print(f"Matched Playcounts:          {len(yt_playcounts):,} ({100*len(yt_playcounts)/max(len(yt_tracks),1):.1f}%)")
+    print(f"Unmatched Tracks:            {len(yt_no_lastfm_match):,}")
+    print(f"Total Execution Time:        {(time.time() - t1)/60:.1f} minutes")

@@ -1,14 +1,15 @@
 """LastFM History Library"""
 
+from concurrent.futures import as_completed
+from concurrent.futures import ThreadPoolExecutor
 import os
+import sys
 import time
 
-import pandas as pd
-import requests
-
-# Generate your own at https://www.last.fm/api/account/create
 from auth import LASTFM_API_KEY
 from auth import LASTFM_USER_NAME
+import pandas as pd
+import requests
 
 # https://mathieuhendey.com/2020/10/download-all-your-historical-last.fm-data/#pandas-to-create-a-csv
 
@@ -53,45 +54,63 @@ def get_scrobbles(
         f"&format=json"
     )
 
-    # Determine the total number of pages to fetch
-    response = requests.get(f"{base_url}&page={page}").json()
-    total_pages = int(response[endpoint]["@attr"]["totalPages"])
-    total_pages = min(total_pages, pages) if pages else total_pages
-
-    print(f"Total pages to retrieve: {total_pages}.")
-
-    # Generate URLs for each page to be fetched
-    urls = [f"{base_url}&page={
-        page_num}" for page_num in range(page, total_pages + 1)]
-
-    # Fetch data concurrently
     try:
-        from requests_toolbelt.threaded import pool
-        p = pool.Pool.from_urls(urls)
-        p.join_all()
-        responses = p.responses()
-    except ImportError:
-        print("Warning: requests_toolbelt not installed. Using sequential requests.")
-        responses = [requests.get(url) for url in urls]
+        # Determine the total number of pages to fetch
+        response = requests.get(f"{base_url}&page={page}", timeout=10).json()
+        total_pages = int(response[endpoint]["@attr"]["totalPages"])
+        total_pages = min(total_pages, pages) if pages else total_pages
 
-    # Extract data from responses
-    df_data = []
-    for response in responses:
-        res_json = response.json() if hasattr(response, 'json') else response.json
-        if response.ok and endpoint in res_json:
-            for track in res_json[endpoint].get("track", []):
-                if "@attr" not in track:
-                    df_data.append({
-                        "artist": track["artist"]["#text"],
-                        "album": track["album"]["#text"],
-                        "title": track["name"],
-                        "timestamps": int(track["date"]["uts"]),
-                    })
+        print(f"Total pages to retrieve: {total_pages}.")
 
-    # Create DataFrame from extracted data
-    df = pd.DataFrame(df_data)
-    df["datetime"] = pd.to_datetime(df["timestamps"], unit="s")
-    return df.sort_values("datetime", ascending=True)
+        # Generate URLs for each page to be fetched
+        urls = [f"{base_url}&page={page_num}" for page_num in range(page, total_pages + 1)]
+
+        # Fetch data concurrently using ThreadPoolExecutor
+        def fetch_url(url):
+            try:
+                resp = requests.get(url, timeout=15)
+                return resp if resp.ok else None
+            except Exception:
+                return None
+
+        print(f"Fetching {len(urls)} pages concurrently with ThreadPoolExecutor...")
+        responses = []
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            future_to_url = {executor.submit(fetch_url, url): url for url in urls}
+            for future in as_completed(future_to_url):
+                res = future.result()
+                if res:
+                    responses.append(res)
+
+        # Extract data from responses
+        df_data = []
+        for response in responses:
+            res_json = response.json() if hasattr(response, 'json') else response.json
+            if hasattr(response, 'ok') and response.ok and endpoint in res_json:
+                for track in res_json[endpoint].get("track", []):
+                    if "@attr" not in track:
+                        df_data.append({
+                            "artist": track["artist"]["#text"],
+                            "album": track["album"]["#text"],
+                            "title": track["name"],
+                            "timestamps": int(track["date"]["uts"]),
+                        })
+
+        # Create DataFrame from extracted data
+        df = pd.DataFrame(df_data)
+        if not df.empty:
+            df["datetime"] = pd.to_datetime(df["timestamps"], unit="s")
+            return df.sort_values("datetime", ascending=True)
+        return df
+    except Exception as e:
+        print(f"Warning: Last.fm API fetch failed ({e}).")
+        if os.path.exists(SCROBBLES_TSV):
+            print(f"Falling back to existing local scrobbles file: {SCROBBLES_TSV}")
+            df = pd.read_csv(SCROBBLES_TSV, sep='\t')
+            if 'timestamps' in df.columns and 'datetime' not in df.columns:
+                df["datetime"] = pd.to_datetime(df["timestamps"], unit="s")
+            return df
+        raise
 
 
 def get_time_remaining(pages_remaining: int, time_per_page_ms: int = 115) -> str:
@@ -114,12 +133,29 @@ if __name__ == "__main__":
     sys.path.append(os.path.abspath('../music-sources-unified'))
     import unify_lib as uni
 
+    # Configure pandas formatting to prevent truncation in log files
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 1000)
+    pd.set_option('display.max_rows', 200)
+
     t0 = time.time()
 
     # --- Fetch and save all Scrobbles ---
     scrobbles_df = get_scrobbles(page=1, pages=0)  # Default to all Scrobbles
     scrobbles_df.to_csv(SCROBBLES_TSV, sep='\t', index=False, encoding="utf-8")
-    print(scrobbles_df.describe())
+
+    print("\n--- Scrobbles Overview ---")
+    print(f"Total Scrobbles: {len(scrobbles_df):,}")
+    if not scrobbles_df.empty and 'datetime' in scrobbles_df:
+        print(f"Date Range:      {scrobbles_df['datetime'].min()} to {scrobbles_df['datetime'].max()}")
+    print(f"Unique Artists:  {scrobbles_df['artist'].nunique():,}")
+    print(f"Unique Albums:   {scrobbles_df['album'].nunique():,}")
+    print(f"Unique Tracks:   {scrobbles_df['title'].nunique():,}")
+
+    print("\n--- Top 50 Artists ---")
+    top_artists = scrobbles_df['artist'].value_counts().head(50).reset_index()
+    top_artists.columns = ['artist', 'scrobbles']
+    print(top_artists.to_string(index=False))
 
     # --- Calculate and save Playcounts ---
     sep = "////"
@@ -131,7 +167,9 @@ if __name__ == "__main__":
     )
     top_entries['playcount'] = scrobble_counts.values
     top_entries.to_csv(PLAYCOUNTS_TSV, sep='\t', index=True)
-    print(top_entries.head())
+
+    print("\n--- Top 50 Most Scrobbled Tracks ---")
+    print(top_entries.head(50).to_string(index=False))
 
     # --- Load playcounts tsv and analyze top albums ---
     lastfm = uni.ingest_lastfm_playcounts(PLAYCOUNTS_TSV)
@@ -145,9 +183,8 @@ if __name__ == "__main__":
     total_playcount = total_playcount.sort_values(
         by='total_playcount', ascending=False)
     total_playcount.to_csv(LASTFM_TOP_ALBUMS, sep='\t')
-    print(f'Top 50 albums:\n{total_playcount.head(50)}')
 
+    print("\n--- Top 50 Most Scrobbled Albums ---")
+    print(total_playcount[['artist', 'album', 'total_playcount', 'mean_playcount']].head(50).to_string(index=False))
 
-
-
-    print(f'Finished in {(time.time() - t0)/60:0.1f} minutes')
+    print(f'\nJob finished in {(time.time() - t0)/60:0.1f} minutes.')
