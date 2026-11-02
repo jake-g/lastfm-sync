@@ -13,6 +13,11 @@ from auth import LASTFM_API_KEY, LASTFM_USER_NAME
 OUTPUT_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', 'music-sources-unified')
 )
+if OUTPUT_DIR not in sys.path:
+  sys.path.append(OUTPUT_DIR)
+
+# isort: split
+import unify_lib as uni  # noqa: E402  (needs OUTPUT_DIR on sys.path)
 
 # File paths for saving data
 SCROBBLES_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_scrobbles.tsv')
@@ -98,8 +103,8 @@ def get_scrobbles(
 
     df = pd.DataFrame(df_data)
     if not df.empty:
-      df['datetime'] = pd.to_datetime(df['timestamps'], unit='s')
-      return df.sort_values('datetime', ascending=True)
+      df['datetime'] = uni.parse_scrobble_timestamps(df['timestamps'])
+      return df.sort_values('datetime', ascending=True, na_position='last')
     return df
   except Exception as e:
     print(f'Warning: Last.fm API fetch failed ({e}).')
@@ -107,7 +112,7 @@ def get_scrobbles(
       print(f'Falling back to existing local scrobbles file: {SCROBBLES_TSV}')
       df = pd.read_csv(SCROBBLES_TSV, sep='\t')
       if 'timestamps' in df.columns and 'datetime' not in df.columns:
-        df['datetime'] = pd.to_datetime(df['timestamps'], unit='s')
+        df['datetime'] = uni.parse_scrobble_timestamps(df['timestamps'])
       return df
     raise
 
@@ -162,12 +167,6 @@ def compute_top_albums(lastfm_df: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
-  if OUTPUT_DIR not in sys.path:
-    sys.path.append(OUTPUT_DIR)
-
-  # isort: split
-  import unify_lib as uni
-
   pd.set_option('display.max_columns', None)
   pd.set_option('display.width', 1000)
   pd.set_option('display.max_rows', 200)
@@ -180,9 +179,11 @@ if __name__ == '__main__':
   print('\n--- Scrobbles Overview ---')
   print(f'Total Scrobbles: {len(scrobbles_df):,}')
   if not scrobbles_df.empty and 'datetime' in scrobbles_df:
+    undated = int(scrobbles_df['datetime'].isna().sum())
     print(
         f"Date Range:      {scrobbles_df['datetime'].min()} to "
         f"{scrobbles_df['datetime'].max()}"
+        f' ({undated:,} undated scrobbles excluded)'
     )
   print(f"Unique Artists:  {scrobbles_df['artist'].nunique():,}")
   print(f"Unique Albums:   {scrobbles_df['album'].nunique():,}")
