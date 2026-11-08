@@ -20,9 +20,7 @@ import unify_lib as uni
 
 # Run Interval Threshold (90 days = 3 months default)
 RUN_INTERVAL_DAYS = 90
-LAST_RUN_MARKER = os.path.join(
-    OUTPUT_DIR, 'tsvs', '.last_ytmusic_lastfm_match_run'
-)
+JOB_NAME = 'ytmusic_lastfm_match'
 
 LOG_EVERY = 500
 DATE = time.strftime('%m-%d-%Y')
@@ -72,48 +70,6 @@ yt_lastfm_id_map_f = os.path.join(
 yt_playcounts: Dict[str, Any] = {}
 yt_no_lastfm_match: Dict[str, Any] = {}
 yt_lastfm_id_map: Dict[str, str] = {}
-
-
-def check_should_run(force: bool = False) -> bool:
-  """Checks if script should run based on RUN_INTERVAL_DAYS threshold."""
-  if force:
-    print(
-        'Force flag set: Running Last.fm playcount matching ignoring '
-        'interval threshold.'
-    )
-    return True
-
-  target_file = (
-      LAST_RUN_MARKER
-      if os.path.exists(LAST_RUN_MARKER)
-      else (YT_LASTFM_PLACYCOUNT if os.path.exists(YT_LASTFM_PLACYCOUNT) else None)
-  )
-
-  if target_file and os.path.exists(target_file):
-    mtime = os.path.getmtime(target_file)
-    elapsed_days = (time.time() - mtime) / (24 * 3600)
-    if elapsed_days < RUN_INTERVAL_DAYS:
-      print('\nSkipping Last.fm <-> YTMusic playcount matching:')
-      print(
-          f'  -> Last run was {elapsed_days:.1f} days ago '
-          f'(Interval threshold: {RUN_INTERVAL_DAYS} days).'
-      )
-      print('  -> Use --force to override and run immediately.\n')
-      return False
-  return True
-
-
-def touch_last_run_marker() -> None:
-  """Updates the marker file with current timestamp."""
-  try:
-    os.makedirs(os.path.dirname(LAST_RUN_MARKER), exist_ok=True)
-    with open(LAST_RUN_MARKER, 'w', encoding='utf-8') as f:
-      f.write(
-          f'last_run={time.time()}\n'
-          f"last_run_date={time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-      )
-  except Exception as e:
-    print(f'Warning writing last run marker: {e}')
 
 
 def match_ytmusic_with_lastfm(
@@ -217,7 +173,7 @@ def save_tsvs(
   if track_db['lastfm_playcount'].sum() <= 0:
     raise ValueError('Total matched Last.fm playcount must be > 0')
   track_db.to_csv(YT_TRACK_DB_OUT, sep='\t', header=True)
-  touch_last_run_marker()
+  uni.touch_last_run(JOB_NAME)
 
 
 if __name__ == '__main__':
@@ -235,7 +191,12 @@ if __name__ == '__main__':
   )
   args, _ = parser.parse_known_args()
 
-  if not check_should_run(force=args.force):
+  if not uni.check_should_run(
+      JOB_NAME,
+      RUN_INTERVAL_DAYS,
+      force=args.force,
+      fallback_path=YT_LASTFM_PLACYCOUNT,
+  ):
     sys.exit(0)
 
   # INIT
