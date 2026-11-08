@@ -3,7 +3,7 @@
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 import requests
@@ -58,51 +58,52 @@ def get_scrobbles(
       f'&format=json'
   )
 
-  try:
-    response = requests.get(f'{base_url}&page={page}', timeout=10).json()
-    total_pages = int(response[endpoint]['@attr']['totalPages'])
-    total_pages = min(total_pages, pages) if pages else total_pages
-
-    print(f'Total pages to retrieve: {total_pages}.')
-
-    urls = [
-        f'{base_url}&page={page_num}'
-        for page_num in range(page, total_pages + 1)
-    ]
-
-    def fetch_url(url: str):
+  def fetch_page(session: requests.Session, page_num: int) -> dict:
+    url = f'{base_url}&page={page_num}'
+    for attempt in range(5):
       try:
-        resp = requests.get(url, timeout=15)
-        return resp if resp.ok else None
+        resp = session.get(url, timeout=20)
+        if resp.ok:
+          data = resp.json()
+          if (
+              isinstance(data, dict)
+              and 'error' not in data
+              and endpoint in data
+          ):
+            return data
       except Exception:
-        return None
+        pass
+      time.sleep((2**attempt) + (page_num % 5) * 0.1)
+    raise RuntimeError(f'Incomplete Last.fm scrape: page {page_num} failed.')
 
-    print(f'Fetching {len(urls)} pages concurrently with ThreadPoolExecutor...')
-    responses = []
-    with ThreadPoolExecutor(max_workers=20) as executor:
-      future_to_url = {executor.submit(fetch_url, url): url for url in urls}
-      for future in as_completed(future_to_url):
-        res = future.result()
-        if res:
-          responses.append(res)
+  try:
+    with requests.Session() as session:
+      first_data = fetch_page(session, page)
+      total_pages = int(first_data[endpoint]['@attr']['totalPages'])
+      total_pages = min(total_pages, pages) if pages else total_pages
+      print(f'Total pages to retrieve: {total_pages}.')
+
+      rest_nums = range(page + 1, total_pages + 1)
+      with ThreadPoolExecutor(max_workers=8) as executor:
+        all_pages = [
+            first_data,
+            *executor.map(lambda p: fetch_page(session, p), rest_nums),
+        ]
 
     df_data = []
-    for response in responses:
-      res_json = (
-          response.json() if hasattr(response, 'json') else response.json
-      )
-      if hasattr(response, 'ok') and response.ok and endpoint in res_json:
-        for track in res_json[endpoint].get('track', []):
-          if '@attr' not in track:
-            df_data.append({
-                'artist': track['artist']['#text'],
-                'album': track['album']['#text'],
-                'title': track['name'],
-                'timestamps': int(track['date']['uts']),
-            })
+    for res_json in all_pages:
+      for track in res_json[endpoint].get('track', []):
+        if '@attr' not in track and 'date' in track:
+          df_data.append({
+              'artist': track['artist']['#text'],
+              'album': track['album']['#text'],
+              'title': track['name'],
+              'timestamps': int(track['date']['uts']),
+          })
 
     df = pd.DataFrame(df_data)
     if not df.empty:
+      df = df.drop_duplicates(subset=['artist', 'album', 'title', 'timestamps'])
       df['datetime'] = uni.parse_scrobble_timestamps(df['timestamps'])
       return df.sort_values('datetime', ascending=True, na_position='last')
     return df
@@ -172,7 +173,6 @@ if __name__ == '__main__':
   pd.set_option('display.max_rows', 200)
 
   t0 = time.time()
-
   scrobbles_df = get_scrobbles(page=1, pages=0)
   scrobbles_df.to_csv(SCROBBLES_TSV, sep='\t', index=False, encoding='utf-8')
 
